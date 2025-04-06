@@ -1,3 +1,6 @@
 
 run:
-	go run ./cmd/codeforces_cli/main.go
+	go run ./main.go
+
+build:
+	go build -o bin/codeforces-cli .
