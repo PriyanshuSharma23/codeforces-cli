@@ -13,6 +13,7 @@ import (
 
 	"github.com/PriyanshuSharma23/codeforces-cli/internal/ccparser"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var listenCmd = &cobra.Command{
@@ -37,6 +38,19 @@ var listenCmd = &cobra.Command{
 				http.Error(w, "Invalid JSON", http.StatusBadRequest)
 				return
 			}
+
+			// Debug: print loaded config values
+			fmt.Println("------------ Loaded Configuration ------------")
+			fmt.Println("root:", viper.GetString("root"))
+			fmt.Println("language:", viper.GetString("language"))
+			fmt.Println("buildCommand:", viper.GetString("buildCommand"))
+			fmt.Println("executeCommand:", viper.GetString("executeCommand"))
+			fmt.Println("testCaseInputPrefix:", viper.GetString("testCaseInputPrefix"))
+			fmt.Println("testCaseOutputPrefix:", viper.GetString("testCaseOutputPrefix"))
+			fmt.Println("port:", viper.GetInt("port"))
+			fmt.Println("editorCommand:", viper.GetString("editorCommand"))
+			fmt.Println("templatePath:", viper.GetString("templatePath"))
+			fmt.Println("------------------------------------------------")
 
 			// Display metadata
 			fmt.Printf("\n✅ Problem: %s\n🔗 %s\n🧠 %dMB | ⏱️ %dms\n", ccproblem.Name, ccproblem.URL, ccproblem.MemoryLimit, ccproblem.TimeLimit)
@@ -84,4 +98,3 @@ var listenCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(listenCmd)
 }
-

@@ -1,12 +1,12 @@
 /*
 Copyright © 2025 Priyanshu Sharma inbox.priyanshu@gmail.com
-
 */
 package cmd
 
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -52,26 +52,61 @@ func init() {
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
 
-// initConfig reads in config file and ENV variables if set.
 func initConfig() {
 	if cfgFile != "" {
-		// Use config file from the flag.
+		// Use config file from the --config flag
 		viper.SetConfigFile(cfgFile)
+		fmt.Println("[config] Using config file from flag:", cfgFile)
 	} else {
-		// Find home directory.
-		home, err := os.UserHomeDir()
+		// Get OS-specific config dir
+		configDir, err := os.UserConfigDir()
 		cobra.CheckErr(err)
 
-		// Search config in home directory with name ".codeforces-cli" (without extension).
-		viper.AddConfigPath(home)
-		viper.SetConfigType("yaml")
-		viper.SetConfigName(".codeforces-cli")
+		fmt.Println("[config] Config dir:", configDir)
+
+		// Default: ~/.config/codeforces-cli/config.yaml (or %AppData%\codeforces-cli\config.yaml)
+		defaultPath := filepath.Join(configDir, "codeforces-cli", "config.yaml")
+
+		if _, err := os.Stat(defaultPath); err == nil {
+			viper.SetConfigFile(defaultPath)
+			fmt.Println("[config] Found primary config at:", defaultPath)
+		} else {
+			// Fallback: ~/codeforces-cli.yaml
+			home, err := os.UserHomeDir()
+			cobra.CheckErr(err)
+
+			fallback := filepath.Join(home, "codeforces-cli.yaml")
+			fmt.Println("[config] Trying fallback config at:", fallback)
+
+			viper.SetConfigFile(fallback)
+		}
 	}
 
-	viper.AutomaticEnv() // read in environment variables that match
+	// Specify the format and allow env overrides
+	viper.SetConfigType("yaml")
+	viper.AutomaticEnv()
 
-	// If a config file is found, read it in.
+	// Try to read the selected config
 	if err := viper.ReadInConfig(); err == nil {
-		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
+		fmt.Fprintln(os.Stderr, "✅ Using config file:", viper.ConfigFileUsed())
+	} else {
+		fmt.Fprintln(os.Stderr, "⚠️ No config file found or failed to read:", err)
 	}
+
+	// Set default values
+	home, err := os.UserHomeDir()
+	cobra.CheckErr(err)
+
+	defaultProblemPath := filepath.Join(home, "codeforces", "problems")
+	defaultTemplatePath := filepath.Join(home, "codeforces", "templates", "main.cpp")
+
+	viper.SetDefault("root", defaultProblemPath)
+	viper.SetDefault("language", "cpp")
+	viper.SetDefault("buildCommand", "")
+	viper.SetDefault("executeCommand", "")
+	viper.SetDefault("testCaseInputPrefix", "input")
+	viper.SetDefault("testCaseOutputPrefix", "output")
+	viper.SetDefault("port", 10045)
+	viper.SetDefault("editorCommand", "nvim {{.Path}}")
+	viper.SetDefault("templatePath", defaultTemplatePath)
 }
