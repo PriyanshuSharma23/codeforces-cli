@@ -130,7 +130,6 @@ func (e *Engine) readTestCases() (map[int]TestCase, error) {
 		} else if strings.HasPrefix(fileName, e.outputPrefix) {
 			isInput = false
 		} else {
-			e.logger.Printf("WARN: invalid entry: %s", entry.Name())
 			continue
 		}
 
@@ -194,7 +193,7 @@ func (e *Engine) runTestCase(testNum int, t TestCase) (string, bool, error) {
 
 	outStr := string(outBytes)
 
-	if outStr != t.Output {
+	if strings.TrimSpace(outStr) != strings.TrimSpace(t.Output) {
 		return outStr, false, nil
 	}
 

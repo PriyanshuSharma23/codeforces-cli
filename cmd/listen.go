@@ -2,11 +2,14 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
-	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"text/template"
 	"time"
 
 	"github.com/PriyanshuSharma23/codeforces-cli/internal/ccparser"
@@ -39,7 +42,6 @@ var listenCmd = &cobra.Command{
 				return
 			}
 
-			logger := log.New(os.Stdout, "", log.LstdFlags)
 			parser := ccparser.NewParser(logger)
 
 			parsedProblem, err := parser.Parse(&ccproblem)
@@ -70,15 +72,15 @@ var listenCmd = &cobra.Command{
 			}
 
 			templatePath := viper.GetString("templatePath")
-			var template string
+			var templateStr string
 			if templatePath != "" {
 				t, err := dm.LoadTemplate(templatePath)
 				cobra.CheckErr(err)
-				template = t
+				templateStr = t
 			}
 
 			progFile := fmt.Sprintf("%s.%s", viper.GetString("programFile"), viper.GetString("language"))
-			if err := dm.WriteProgramFile(problemKey, progFile, template); err != nil {
+			if err := dm.WriteProgramFile(problemKey, progFile, templateStr); err != nil {
 				http.Error(w, "Error writing program file", http.StatusInternalServerError)
 				return
 			}
@@ -88,6 +90,30 @@ var listenCmd = &cobra.Command{
 			}
 
 			go func() {
+				// 🔥 Open the editor using editorCommand
+				editorCmdTemplate := viper.GetString("editorCommand")
+				editorTemplate, err := template.New("editor").Parse(editorCmdTemplate)
+				if err != nil {
+					logger.Printf("Invalid editorCommand template: %v", err)
+				} else {
+					var cmdBuf bytes.Buffer
+					err = editorTemplate.Execute(&cmdBuf, map[string]string{
+						"Path": filepath.Join(dm.FullProblemPath(problemKey), progFile),
+						"Dir":  filepath.Join(dm.FullProblemPath(problemKey)),
+					})
+					if err != nil {
+						logger.Printf("Failed to render editor command: %v", err)
+					} else {
+						editorArgs := strings.Fields(cmdBuf.String())
+						cmd := exec.Command(editorArgs[0], editorArgs[1:]...)
+						cmd.Dir = dm.FullProblemPath(problemKey)
+						err = cmd.Start()
+						if err != nil {
+							logger.Printf("Failed to launch editor: %v", err)
+						}
+					}
+				}
+
 				time.Sleep(2 * time.Second)
 				server.Close()
 			}()
@@ -111,4 +137,3 @@ var listenCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(listenCmd)
 }
-

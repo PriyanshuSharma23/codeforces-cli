@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/PriyanshuSharma23/codeforces-cli/internal/execution"
 )
@@ -96,4 +97,42 @@ func (d *DirectoryManager) LoadTemplate(templatePath string) (string, error) {
 	}
 
 	return string(content), nil
+}
+
+func (d *DirectoryManager) GetCurrentProblemKey() (Problem, error) {
+	currentDir, err := os.Getwd()
+	if err != nil {
+		d.logger.Printf("ERROR: failed to get the current working dir: %s\n", err)
+		return Problem{
+			ContestCode: 0,
+			ProblemCode: "",
+		}, err // Return empty problem on error
+	}
+
+	parts := strings.Split(currentDir, string(filepath.Separator))
+
+	if len(parts) < 2 {
+		d.logger.Println("current working dir path segments less than two")
+		return Problem{
+			ContestCode: 0,
+			ProblemCode: "",
+		}, fmt.Errorf("current working dir path segments less than two") // Return empty problem if path is too short
+	}
+
+	problemCode := parts[len(parts)-1]
+	contestCodeStr := parts[len(parts)-2]
+
+	contestCode, err := strconv.Atoi(contestCodeStr)
+	if err != nil {
+		d.logger.Printf("failed to convert contest code %s to int: %s\n", contestCodeStr, err)
+		return Problem{
+			ContestCode: 0,
+			ProblemCode: problemCode, // return the problem code even if contest code is invalid.
+		}, err // Return problem code with contest code 0 if conversion fails
+	}
+
+	return Problem{
+		ContestCode: contestCode,
+		ProblemCode: problemCode,
+	}, nil
 }
