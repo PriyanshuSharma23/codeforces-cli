@@ -101,9 +101,10 @@ func initConfig() {
 	defaultTemplatePath := filepath.Join(home, "codeforces", "templates", "main.cpp")
 
 	viper.SetDefault("root", defaultProblemPath)
-	viper.SetDefault("language", "cpp")
+	viper.SetDefault("language", "py")
+	viper.SetDefault("programFile", "main")
 	viper.SetDefault("buildCommand", "")
-	viper.SetDefault("executeCommand", "")
+	viper.SetDefault("executeCommand", "python3 {{.Path}}")
 	viper.SetDefault("testCaseInputPrefix", "input")
 	viper.SetDefault("testCaseOutputPrefix", "output")
 	viper.SetDefault("port", 10045)

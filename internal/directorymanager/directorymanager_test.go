@@ -1,237 +1,140 @@
 package directorymanager
 
 import (
+	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/PriyanshuSharma23/codeforces-cli/internal/execution"
 )
 
-func TestProblemDirExists_Success(t *testing.T) {
-	tempRoot, err := os.MkdirTemp("", "dm_test_root")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempRoot)
+func setupTestManager(t *testing.T) (*DirectoryManager, string) {
+	t.Helper()
+	root := t.TempDir()
+	logger := log.New(os.Stdout, "[test] ", log.Lshortfile)
+	return NewDirectoryManager(root, logger), root
+}
 
-	// Setup: Create contest/problem dir
-	contestCode := 1234
-	problemCode := "A"
-	problem := Problem{ContestCode: contestCode, ProblemCode: problemCode}
-	problemDir := filepath.Join(tempRoot, "1234", "A")
+func sampleProblem() Problem {
+	return Problem{ContestCode: 1234, ProblemCode: "A"}
+}
 
-	err = os.MkdirAll(problemDir, 0o755)
-	if err != nil {
-		t.Fatalf("Failed to create problem directory: %v", err)
-	}
-
-	logger := log.New(os.Stdout, "[TEST] ", log.LstdFlags)
-	dm := NewDirectoryManager(tempRoot, logger)
-
-	returnedPath, err := dm.ProblemDirExists(problem)
-	if err != nil {
-		t.Fatalf("Expected no error, got: %v", err)
-	}
-
-	if returnedPath != problemDir {
-		t.Errorf("Expected path %s, got %s", problemDir, returnedPath)
+func TestFullProblemPath(t *testing.T) {
+	dm, root := setupTestManager(t)
+	p := sampleProblem()
+	expected := filepath.Join(root, "1234", "A")
+	if path := dm.FullProblemPath(p); path != expected {
+		t.Errorf("expected path %q, got %q", expected, path)
 	}
 }
 
-func TestProblemDirExists_MissingProblemDir(t *testing.T) {
-	tempRoot, err := os.MkdirTemp("", "dm_test_missing")
+func TestEnsureDir(t *testing.T) {
+	dm, _ := setupTestManager(t)
+	p := sampleProblem()
+	dir, err := dm.EnsureDir(p)
 	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
+		t.Fatalf("EnsureDir failed: %v", err)
 	}
-	defer os.RemoveAll(tempRoot)
-
-	contestCode := 5678
-	problemCode := "B"
-	problem := Problem{ContestCode: contestCode, ProblemCode: problemCode}
-
-	// Only contest dir, no problem dir
-	os.MkdirAll(filepath.Join(tempRoot, "5678"), 0o755)
-
-	logger := log.New(os.Stdout, "[TEST] ", log.LstdFlags)
-	dm := NewDirectoryManager(tempRoot, logger)
-
-	_, err = dm.ProblemDirExists(problem)
-	if err == nil {
-		t.Fatal("Expected error for missing problem directory, got nil")
-	}
-	if !strings.Contains(err.Error(), "no such file or directory") {
-		t.Errorf("Unexpected error: %v", err)
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		t.Errorf("directory was not created: %s", dir)
 	}
 }
 
-func TestProblemDirExists_MissingContestDir(t *testing.T) {
-	tempRoot, err := os.MkdirTemp("", "dm_test_missing_contest")
+func TestWriteTestCases(t *testing.T) {
+	dm, _ := setupTestManager(t)
+	p := sampleProblem()
+	_, err := dm.EnsureDir(p)
 	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempRoot)
-
-	problem := Problem{ContestCode: 9999, ProblemCode: "Z"}
-
-	logger := log.New(os.Stdout, "[TEST] ", log.LstdFlags)
-	dm := NewDirectoryManager(tempRoot, logger)
-
-	_, err = dm.ProblemDirExists(problem)
-	if err == nil {
-		t.Fatal("Expected error for missing contest directory, got nil")
-	}
-	if !strings.Contains(err.Error(), "no such file or directory") {
-		t.Errorf("Unexpected error: %v", err)
-	}
-}
-
-func TestCreateProblemDir_Success(t *testing.T) {
-	tempRoot, err := os.MkdirTemp("", "dm_create_success")
-	if err != nil {
-		t.Fatalf("Failed to create temp root: %v", err)
-	}
-	defer os.RemoveAll(tempRoot)
-
-	problem := Problem{ContestCode: 1111, ProblemCode: "X"}
-
-	logger := log.New(os.Stdout, "[TEST] ", log.LstdFlags)
-	dm := NewDirectoryManager(tempRoot, logger)
-
-	path, err := dm.CreateProblemDir(problem)
-	if err != nil {
-		t.Fatalf("CreateProblemDir failed: %v", err)
-	}
-
-	if fi, err := os.Stat(path); err != nil || !fi.IsDir() {
-		t.Errorf("Expected directory at %s to exist, got error: %v", path, err)
-	}
-}
-
-func TestCreateProblemDir_AlreadyExists(t *testing.T) {
-	tempRoot, err := os.MkdirTemp("", "dm_create_exists")
-	if err != nil {
-		t.Fatalf("Failed to create temp root: %v", err)
-	}
-	defer os.RemoveAll(tempRoot)
-
-	problem := Problem{ContestCode: 2222, ProblemCode: "Y"}
-	problemDir := filepath.Join(tempRoot, "2222", "Y")
-	os.MkdirAll(problemDir, 0o755)
-
-	logger := log.New(os.Stdout, "[TEST] ", log.LstdFlags)
-	dm := NewDirectoryManager(tempRoot, logger)
-
-	path, err := dm.CreateProblemDir(problem)
-	if err != nil {
-		t.Fatalf("Expected no error when dir already exists, got: %v", err)
-	}
-
-	if path != problemDir {
-		t.Errorf("Expected path %s, got %s", problemDir, path)
-	}
-}
-
-func TestPopulate_CreatesTestCasesAndPreservesExistingProgram(t *testing.T) {
-	tempRoot := createTempDir(t)
-	defer os.RemoveAll(tempRoot)
-
-	problem := Problem{ContestCode: 1001, ProblemCode: "A"}
-	programFileName := "main.cpp"
-	inputPrefix := "in"
-	outputPrefix := "out"
-
-	problemDir := filepath.Join(tempRoot, "1001", "A")
-	err := os.MkdirAll(problemDir, 0o755)
-	if err != nil {
-		t.Fatalf("Failed to create problem directory: %v", err)
-	}
-
-	// Create a pre-existing program file
-	programPath := filepath.Join(problemDir, programFileName)
-	err = os.WriteFile(programPath, []byte("// existing content"), 0o644)
-	if err != nil {
-		t.Fatalf("Failed to create existing program file: %v", err)
+		t.Fatalf("WriteTestCases failed: %v", err)
 	}
 
 	testCases := []execution.TestCase{
-		{Input: "1 2\n", Output: "3\n"},
-		{Input: "4 5\n", Output: "9\n"},
+		{Input: "1 2", Output: "3"},
+		{Input: "4 5", Output: "9"},
 	}
-
-	logger := log.New(os.Stdout, "[TEST] ", log.LstdFlags)
-	dm := NewDirectoryManager(tempRoot, logger)
-
-	err = dm.Populate(problem, programFileName, testCases, inputPrefix, outputPrefix)
+	err = dm.WriteTestCases(p, testCases, "input", "output")
 	if err != nil {
-		t.Fatalf("Populate failed: %v", err)
+		t.Fatalf("WriteTestCases failed: %v", err)
 	}
 
-	// Check if test cases exist
 	for i := range testCases {
-		inputPath := filepath.Join(problemDir, inputPrefix+strconv.Itoa(i+1))
-		outputPath := filepath.Join(problemDir, outputPrefix+strconv.Itoa(i+1))
+		inFile := filepath.Join(dm.FullProblemPath(p), fmt.Sprintf("input%d", i+1))
+		outFile := filepath.Join(dm.FullProblemPath(p), fmt.Sprintf("output%d", i+1))
 
-		assertFileExists(t, inputPath)
-		assertFileExists(t, outputPath)
-	}
-
-	// Ensure program file content is unchanged
-	data, err := os.ReadFile(programPath)
-	if err != nil {
-		t.Fatalf("Failed to read program file: %v", err)
-	}
-	if !strings.Contains(string(data), "existing content") {
-		t.Errorf("Expected program file to retain existing content, got: %s", string(data))
+		checkFileContains(t, inFile, testCases[i].Input)
+		checkFileContains(t, outFile, testCases[i].Output)
 	}
 }
 
-func TestPopulate_CreatesProgramIfMissing(t *testing.T) {
-	tempRoot := createTempDir(t)
-	defer os.RemoveAll(tempRoot)
-
-	problem := Problem{ContestCode: 1002, ProblemCode: "B"}
-	programFileName := "main.cpp"
-	inputPrefix := "input"
-	outputPrefix := "output"
-
-	testCases := []execution.TestCase{
-		{Input: "6 1\n", Output: "7\n"},
-	}
-
-	logger := log.New(os.Stdout, "[TEST] ", log.LstdFlags)
-	dm := NewDirectoryManager(tempRoot, logger)
-
-	err := dm.Populate(problem, programFileName, testCases, inputPrefix, outputPrefix)
+func TestWriteMetadata(t *testing.T) {
+	dm, _ := setupTestManager(t)
+	p := sampleProblem()
+	_, err := dm.EnsureDir(p)
 	if err != nil {
-		t.Fatalf("Populate failed: %v", err)
+		t.Fatalf("WriteTestCases failed: %v", err)
 	}
 
-	problemDir := filepath.Join(tempRoot, "1002", "B")
-	programPath := filepath.Join(problemDir, programFileName)
-	assertFileExists(t, programPath)
+	meta := map[string]string{"name": "Test Problem"}
+	err = dm.WriteMetadata(p, meta)
+	if err != nil {
+		t.Fatalf("WriteMetadata failed: %v", err)
+	}
 
-	inputPath := filepath.Join(problemDir, "input1")
-	outputPath := filepath.Join(problemDir, "output1")
-	assertFileExists(t, inputPath)
-	assertFileExists(t, outputPath)
+	file := filepath.Join(dm.FullProblemPath(p), "problem.json")
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("reading metadata file failed: %v", err)
+	}
+
+	var parsed map[string]string
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("metadata file is not valid JSON: %v", err)
+	}
+	if parsed["name"] != "Test Problem" {
+		t.Errorf("unexpected metadata content: %v", parsed)
+	}
 }
 
-func createTempDir(t *testing.T) string {
+func TestWriteProgramFile(t *testing.T) {
+	dm, _ := setupTestManager(t)
+	p := sampleProblem()
+	_, err := dm.EnsureDir(p)
+	if err != nil {
+		t.Fatalf("WriteTestCases failed: %v", err)
+	}
+
+	code := `#include <iostream>`
+	filename := "main.cpp"
+	err = dm.WriteProgramFile(p, filename, code)
+	if err != nil {
+		t.Fatalf("WriteProgramFile failed: %v", err)
+	}
+
+	path := filepath.Join(dm.FullProblemPath(p), filename)
+	checkFileContains(t, path, code)
+
+	// Try again; should not overwrite
+	err = dm.WriteProgramFile(p, filename, "new content")
+	if err != nil {
+		t.Fatalf("WriteProgramFile on existing file should succeed: %v", err)
+	}
+
+	data, _ := os.ReadFile(path)
+	if string(data) != code {
+		t.Errorf("existing file should not be overwritten")
+	}
+}
+
+func checkFileContains(t *testing.T, path, expected string) {
 	t.Helper()
-	tempRoot, err := os.MkdirTemp("", "dm_test")
+	data, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("Failed to create temp root dir: %v", err)
+		t.Fatalf("failed to read file %s: %v", path, err)
 	}
-	return tempRoot
-}
-
-func assertFileExists(t *testing.T, path string) {
-	t.Helper()
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		t.Errorf("Expected file to exist at %s, but it does not", path)
+	if string(data) != expected {
+		t.Errorf("file content mismatch: expected %q, got %q", expected, string(data))
 	}
 }

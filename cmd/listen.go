@@ -1,6 +1,4 @@
-/*
-Copyright © 2025 Priyanshu Sharma inbox.priyanshu@gmail.com
-*/
+// cmd/listener.go
 package cmd
 
 import (
@@ -12,18 +10,20 @@ import (
 	"time"
 
 	"github.com/PriyanshuSharma23/codeforces-cli/internal/ccparser"
+	"github.com/PriyanshuSharma23/codeforces-cli/internal/directorymanager"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
 var listenCmd = &cobra.Command{
 	Use:   "listen",
-	Short: "Listens for problems from Competitive Companion",
+	Short: "Listen for Competitive Companion problems",
 	Run: func(cmd *cobra.Command, args []string) {
 		mux := http.NewServeMux()
+		port := viper.GetString("port")
 
 		server := &http.Server{
-			Addr:    ":10045", // fixed to match printed message
+			Addr:    fmt.Sprintf(":%s", port),
 			Handler: mux,
 		}
 
@@ -39,58 +39,71 @@ var listenCmd = &cobra.Command{
 				return
 			}
 
-			// Debug: print loaded config values
-			fmt.Println("------------ Loaded Configuration ------------")
-			fmt.Println("root:", viper.GetString("root"))
-			fmt.Println("language:", viper.GetString("language"))
-			fmt.Println("buildCommand:", viper.GetString("buildCommand"))
-			fmt.Println("executeCommand:", viper.GetString("executeCommand"))
-			fmt.Println("testCaseInputPrefix:", viper.GetString("testCaseInputPrefix"))
-			fmt.Println("testCaseOutputPrefix:", viper.GetString("testCaseOutputPrefix"))
-			fmt.Println("port:", viper.GetInt("port"))
-			fmt.Println("editorCommand:", viper.GetString("editorCommand"))
-			fmt.Println("templatePath:", viper.GetString("templatePath"))
-			fmt.Println("------------------------------------------------")
-
-			// Display metadata
-			fmt.Printf("\n✅ Problem: %s\n🔗 %s\n🧠 %dMB | ⏱️ %dms\n", ccproblem.Name, ccproblem.URL, ccproblem.MemoryLimit, ccproblem.TimeLimit)
-			fmt.Printf("Group: %s | Interactive: %v | Test Type: %s\n", ccproblem.Group, ccproblem.Interactive, ccproblem.TestType)
-
-			for i, test := range ccproblem.Tests {
-				fmt.Printf("\n--- Test #%d ---\n📝 Input:\n%s\n✅ Expected Output:\n%s\n", i+1, test.Input, test.Output)
-			}
-
-			if java, ok := ccproblem.Languages["java"]; ok {
-				fmt.Printf("\n☕ Java TaskClass: %s | MainClass: %s\n", java.TaskClass, java.MainClass)
-			}
-
 			logger := log.New(os.Stdout, "", log.LstdFlags)
 			parser := ccparser.NewParser(logger)
 
-			problem, err := parser.Parse(&ccproblem)
+			parsedProblem, err := parser.Parse(&ccproblem)
 			if err != nil {
-				logger.Printf("Failed to parse problem: %s", err)
 				http.Error(w, "Failed to parse problem", http.StatusInternalServerError)
 				return
 			}
 
-			fmt.Printf("\n📦 Parsed Problem Struct:\n%+v\n", problem)
+			dm := directorymanager.NewDirectoryManager(viper.GetString("root"), logger)
+			problemKey := directorymanager.Problem{
+				ContestCode: parsedProblem.ContestCode,
+				ProblemCode: parsedProblem.ProblemCode,
+			}
+
+			if _, err := dm.EnsureDir(problemKey); err != nil {
+				http.Error(w, "Could not prepare problem directory", http.StatusInternalServerError)
+				return
+			}
+
+			if err := dm.WriteTestCases(
+				problemKey,
+				parsedProblem.TestCases,
+				viper.GetString("testCaseInputPrefix"),
+				viper.GetString("testCaseOutputPrefix"),
+			); err != nil {
+				http.Error(w, "Error writing test cases", http.StatusInternalServerError)
+				return
+			}
+
+			templatePath := viper.GetString("templatePath")
+			var template string
+			if templatePath != "" {
+				t, err := dm.LoadTemplate(templatePath)
+				cobra.CheckErr(err)
+				template = t
+			}
+
+			progFile := fmt.Sprintf("%s.%s", viper.GetString("programFile"), viper.GetString("language"))
+			if err := dm.WriteProgramFile(problemKey, progFile, template); err != nil {
+				http.Error(w, "Error writing program file", http.StatusInternalServerError)
+				return
+			}
+
+			if err := dm.WriteMetadata(problemKey, ccproblem); err != nil {
+				logger.Printf("Warning: could not write metadata: %v", err)
+			}
 
 			go func() {
 				time.Sleep(2 * time.Second)
-				if err := server.Close(); err != nil {
-					logger.Printf("Failed to close server: %v", err)
-				} else {
-					logger.Println("Server shut down gracefully.")
-				}
+				server.Close()
 			}()
 
-			w.Write([]byte("✅ Problem received! You may close Competitive Companion."))
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"status":      "success",
+				"problemPath": problemKey.RelativeDir(),
+				"programFile": progFile,
+			})
 		})
 
-		fmt.Println("🟢 Listening on http://localhost:10045 ...")
+		fmt.Printf("🟢 Listening on http://localhost:%s...\n", port)
 		if err := server.ListenAndServe(); err != http.ErrServerClosed {
-			fmt.Printf("❌ ListenAndServe(): %s\n", err)
+			fmt.Printf("❌ Server error: %v\n", err)
 		}
 	},
 }
@@ -98,3 +111,4 @@ var listenCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(listenCmd)
 }
+
