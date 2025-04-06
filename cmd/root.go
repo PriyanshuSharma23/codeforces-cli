@@ -20,13 +20,26 @@ var logger = log.New(os.Stdout, "", log.LstdFlags)
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "codeforces-cli",
-	Short: "A brief description of your application",
-	Long: `A longer description that spans multiple lines and likely contains
-examples and usage of using your application. For example:
+	Short: "A CLI tool to streamline competitive programming on Codeforces",
+	Long: `codeforces-cli is a powerful command-line application designed to
+enhance your competitive programming experience on Codeforces.
 
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+This tool helps you efficiently manage problems by integrating with the Competitive
+Companion browser extension, automatically preparing your working environment with
+boilerplate code, and setting up test cases. Moreover, it allows easy compilation
+and execution of your solutions against sample test cases, providing quick feedback
+on their correctness.
+
+Key Features:
+
+- Automatic problem directory creation with predefined structure
+- Integration with Competitive Companion for seamless problem import
+- Utilization of customizable templates to kickstart your solutions
+- Execution and testing of solutions with straightforward commands
+- Supports flexible configuration for different languages and editors
+
+With codeforces-cli, you can focus more on solving problems rather than setting up
+your development environment.`,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
 	// Run: func(cmd *cobra.Command, args []string) { },
