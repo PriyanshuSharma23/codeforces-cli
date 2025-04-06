@@ -92,26 +92,29 @@ var listenCmd = &cobra.Command{
 			go func() {
 				// 🔥 Open the editor using editorCommand
 				editorCmdTemplate := viper.GetString("editorCommand")
-				editorTemplate, err := template.New("editor").Parse(editorCmdTemplate)
-				if err != nil {
-					logger.Printf("Invalid editorCommand template: %v", err)
-				} else {
-					var cmdBuf bytes.Buffer
-					err = editorTemplate.Execute(&cmdBuf, map[string]string{
-						"Path": filepath.Join(dm.FullProblemPath(problemKey), progFile),
-						"Dir":  filepath.Join(dm.FullProblemPath(problemKey)),
-					})
+				if editorCmdTemplate != "" {
+					editorTemplate, err := template.New("editor").Parse(editorCmdTemplate)
 					if err != nil {
-						logger.Printf("Failed to render editor command: %v", err)
+						logger.Printf("Invalid editorCommand template: %v", err)
 					} else {
-						editorArgs := strings.Fields(cmdBuf.String())
-						cmd := exec.Command(editorArgs[0], editorArgs[1:]...)
-						cmd.Dir = dm.FullProblemPath(problemKey)
-						err = cmd.Start()
+						var cmdBuf bytes.Buffer
+						err = editorTemplate.Execute(&cmdBuf, map[string]string{
+							"Path": filepath.Join(dm.FullProblemPath(problemKey), progFile),
+							"Dir":  filepath.Join(dm.FullProblemPath(problemKey)),
+						})
 						if err != nil {
-							logger.Printf("Failed to launch editor: %v", err)
+							logger.Printf("Failed to render editor command: %v", err)
+						} else {
+							editorArgs := strings.Fields(cmdBuf.String())
+							cmd := exec.Command(editorArgs[0], editorArgs[1:]...)
+							cmd.Dir = dm.FullProblemPath(problemKey)
+							err = cmd.Start()
+							if err != nil {
+								logger.Printf("Failed to launch editor: %v", err)
+							}
 						}
 					}
+
 				}
 
 				time.Sleep(2 * time.Second)
