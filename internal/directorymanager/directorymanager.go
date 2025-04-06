@@ -6,20 +6,20 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"github.com/PriyanshuSharma23/codeforces-cli/internal/execution"
 )
 
 type DirectoryManager struct {
-	logger           *log.Logger
-	rootPath         string
-	problemExtension string
+	logger   *log.Logger
+	rootPath string
 }
 
-func NewDirectoryManager(dirpath, problemExtension string, logger *log.Logger) *DirectoryManager {
+func NewDirectoryManager(dirpath string, logger *log.Logger) *DirectoryManager {
 	dirpath = filepath.Clean(dirpath)
 	return &DirectoryManager{
 		logger,
 		dirpath,
-		problemExtension,
 	}
 }
 
@@ -28,63 +28,82 @@ type Problem struct {
 	ProblemCode string
 }
 
-func (p Problem) RelativePath(ext string) string {
-	return filepath.Join(strconv.Itoa(p.ContestCode), fmt.Sprintf("%s.%s", p.ProblemCode, ext))
+func (p Problem) RelativeDir() string {
+	return filepath.Join(strconv.Itoa(p.ContestCode), p.ProblemCode)
 }
 
-func (d *DirectoryManager) ProblemFileExists(p Problem) (string, error) {
-	d.logger.Printf("looking for %s", p.RelativePath(d.problemExtension))
+func (d *DirectoryManager) ProblemDirExists(p Problem) (string, error) {
+	relativeDir := p.RelativeDir()
+	d.logger.Printf("looking for directory: %s", relativeDir)
 
-	fullDirPath := filepath.Join(d.rootPath, strconv.Itoa(p.ContestCode))
-	fullPath := filepath.Join(d.rootPath, p.RelativePath(d.problemExtension))
-
-	if _, err := os.Stat(fullDirPath); os.IsNotExist(err) {
-		d.logger.Printf("directory for contest does not exist: %d", p.ContestCode)
+	fullDirPath := filepath.Join(d.rootPath, relativeDir)
+	if stat, err := os.Stat(fullDirPath); err != nil {
+		if os.IsNotExist(err) {
+			d.logger.Printf("directory does not exist: %s", fullDirPath)
+			return "", err
+		}
+		d.logger.Printf("error checking directory: %v", err)
 		return "", err
+	} else if !stat.IsDir() {
+		d.logger.Printf("path exists but is not a directory: %s", fullDirPath)
+		return "", fmt.Errorf("path exists but is not a directory: %s", fullDirPath)
 	}
-
-	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
-		d.logger.Printf("file for problem code does not exist: %s", p.ProblemCode)
-		return "", err
-	}
-
-	file, err := os.Open(fullPath)
-	if err != nil {
-		d.logger.Printf("failed to open problem file: %s", err)
-		return "", err
-	}
-	defer file.Close()
-
-	return fullPath, nil
+	return fullDirPath, nil
 }
 
-func (d *DirectoryManager) CreateProblemFile(p Problem) (string, error) {
-	relativePath := p.RelativePath(d.problemExtension)
-	d.logger.Printf("creating file at %s", relativePath)
+func (d *DirectoryManager) CreateProblemDir(p Problem) (string, error) {
+	relativeDir := p.RelativeDir()
+	d.logger.Printf("creating directory at %s", relativeDir)
 
-	fullDirPath := filepath.Join(d.rootPath, strconv.Itoa(p.ContestCode))
-	fullPath := filepath.Join(d.rootPath, relativePath)
-
+	fullDirPath := filepath.Join(d.rootPath, relativeDir)
 	if err := os.MkdirAll(fullDirPath, 0o755); err != nil {
-		d.logger.Printf("failed to create contest directory: %v", err)
-		return "", fmt.Errorf("could not create contest directory %s: %w", fullDirPath, err)
+		d.logger.Printf("failed to create directory: %v", err)
+		return "", fmt.Errorf("could not create directory %s: %w", fullDirPath, err)
 	}
 
-	if _, err := os.Stat(fullPath); err == nil {
-		d.logger.Printf("file already exists: %s", fullPath)
-		return "", fmt.Errorf("file already exists: %s", fullPath)
-	} else if !os.IsNotExist(err) {
-		d.logger.Printf("error checking file existence: %v", err)
+	if stat, err := os.Stat(fullDirPath); err != nil {
+		d.logger.Printf("error checking created directory: %v", err)
 		return "", err
+	} else if !stat.IsDir() {
+		d.logger.Printf("created path is not a directory: %s", fullDirPath)
+		return "", fmt.Errorf("created path is not a directory: %s", fullDirPath)
 	}
 
-	file, err := os.Create(fullPath)
-	if err != nil {
-		d.logger.Printf("failed to create file: %v", err)
-		return "", fmt.Errorf("could not create file %s: %w", fullPath, err)
-	}
-	defer file.Close()
+	d.logger.Printf("directory successfully created: %s", fullDirPath)
+	return fullDirPath, nil
+}
 
-	d.logger.Printf("file successfully created: %s", fullPath)
-	return fullPath, nil
+func (d *DirectoryManager) Populate(p Problem, programFileName string, testCases []execution.TestCase, inputPrefix, outputPrefix string) error {
+	problemDir := filepath.Join(d.rootPath, strconv.Itoa(p.ContestCode), p.ProblemCode)
+
+	// Ensure problem directory exists
+	if err := os.MkdirAll(problemDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create problem directory: %w", err)
+	}
+
+	// Write test cases with provided prefixes
+	for i, tc := range testCases {
+		inputFile := filepath.Join(problemDir, fmt.Sprintf("%s%d", inputPrefix, i+1))
+		outputFile := filepath.Join(problemDir, fmt.Sprintf("%s%d", outputPrefix, i+1))
+
+		if err := os.WriteFile(inputFile, []byte(tc.Input), 0o644); err != nil {
+			return fmt.Errorf("failed to write input file %s: %w", inputFile, err)
+		}
+
+		if err := os.WriteFile(outputFile, []byte(tc.Output), 0o644); err != nil {
+			return fmt.Errorf("failed to write output file %s: %w", outputFile, err)
+		}
+	}
+
+	// Create the program file if it doesn't exist
+	programPath := filepath.Join(problemDir, programFileName)
+	if _, err := os.Stat(programPath); os.IsNotExist(err) {
+		file, err := os.Create(programPath)
+		if err != nil {
+			return fmt.Errorf("failed to create program file %s: %w", programPath, err)
+		}
+		file.Close()
+	}
+
+	return nil
 }
